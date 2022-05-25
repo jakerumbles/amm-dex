@@ -6,6 +6,7 @@
 #[cfg(feature = "std")]
 include!(concat!(env!("OUT_DIR"), "/wasm_binary.rs"));
 
+use frame_support::{traits::Contains, PalletId};
 use pallet_grandpa::{
 	fg_primitives, AuthorityId as GrandpaId, AuthorityList as GrandpaAuthorityList,
 };
@@ -14,7 +15,10 @@ use sp_consensus_aura::sr25519::AuthorityId as AuraId;
 use sp_core::{crypto::KeyTypeId, OpaqueMetadata};
 use sp_runtime::{
 	create_runtime_str, generic, impl_opaque_keys,
-	traits::{AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount, NumberFor, Verify},
+	traits::{
+		AccountIdConversion, AccountIdLookup, BlakeTwo256, Block as BlockT, IdentifyAccount,
+		NumberFor, Verify,
+	},
 	transaction_validity::{TransactionSource, TransactionValidity},
 	ApplyExtrinsicResult, MultiSignature,
 };
@@ -43,8 +47,14 @@ use pallet_transaction_payment::CurrencyAdapter;
 pub use sp_runtime::BuildStorage;
 pub use sp_runtime::{Perbill, Permill};
 
-/// Import the template pallet.
-pub use pallet_template;
+// Import ORML pallets
+pub use orml_currencies;
+use orml_currencies::BasicCurrencyAdapter;
+pub use orml_tokens;
+pub use orml_traits::parameter_type_with_key;
+
+/// Import additional pallet.
+pub use pallet_amm_dex;
 
 /// An index to a block.
 pub type BlockNumber = u32;
@@ -64,6 +74,10 @@ pub type Index = u32;
 
 /// A hash of some data used by the chain.
 pub type Hash = sp_core::H256;
+
+/// ORML types
+pub type CurrencyId = u32;
+pub type ReserveIdentifier = [u8; 8];
 
 /// Opaque types. These are used by the CLI to instantiate machinery that don't need to know
 /// the specifics of the runtime. They can then be made to be agnostic over specific formats
@@ -143,6 +157,14 @@ parameter_types! {
 		::max_with_normal_ratio(5 * 1024 * 1024, NORMAL_DISPATCH_RATIO);
 	pub const SS58Prefix: u8 = 42;
 }
+
+// Native L1 token
+pub const NATIVE_TOKEN: CurrencyId = 1;
+// Other non-native tokens
+pub const PEPE: CurrencyId = 2;
+pub const CHAD: CurrencyId = 3;
+pub const TRAD: CurrencyId = 4;
+pub const JAKE: CurrencyId = 5;
 
 // Configure FRAME pallets to include in runtime.
 
@@ -261,9 +283,57 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
-/// Configure the pallet-template in pallets/template.
-impl pallet_template::Config for Runtime {
+pub struct MockDustRemovalWhitelist;
+impl Contains<AccountId> for MockDustRemovalWhitelist {
+	fn contains(_a: &AccountId) -> bool {
+		false
+	}
+}
+
+parameter_type_with_key! {
+	pub ExistentialDeposits: |_currency_id: CurrencyId| -> Balance {
+		1 as Balance
+	};
+}
+
+parameter_types! {
+	pub DustReceiver: AccountId = PalletId(*b"orml/dst").into_account();
+}
+
+impl orml_tokens::Config for Runtime {
 	type Event = Event;
+	type Balance = Balance;
+	type Amount = i128;
+	type CurrencyId = CurrencyId;
+	type WeightInfo = ();
+	type ExistentialDeposits = ExistentialDeposits;
+
+	// Maybe come back to this
+	type OnDust = ();
+	type MaxLocks = ConstU32<2>;
+	type MaxReserves = ConstU32<2>;
+	type ReserveIdentifier = ReserveIdentifier;
+	type DustRemovalWhitelist = MockDustRemovalWhitelist;
+}
+
+pub type AdaptedBasicCurrency = BasicCurrencyAdapter<Runtime, Balances, i128, u64>;
+
+parameter_types! {
+	pub const GetNativeCurrencyId: CurrencyId = NATIVE_TOKEN;
+}
+
+impl orml_currencies::Config for Runtime {
+	type MultiCurrency = Tokens;
+	type NativeCurrency = AdaptedBasicCurrency;
+	type GetNativeCurrencyId = GetNativeCurrencyId;
+	type WeightInfo = ();
+}
+
+/// Configure the pallet-amm-dex in pallets/template.
+impl pallet_amm_dex::Config for Runtime {
+	type Event = Event;
+	type CurrencyId = CurrencyId;
+	type PairId = CurrencyId;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -281,8 +351,13 @@ construct_runtime!(
 		Balances: pallet_balances,
 		TransactionPayment: pallet_transaction_payment,
 		Sudo: pallet_sudo,
-		// Include the custom logic from the pallet-template in the runtime.
-		TemplateModule: pallet_template,
+
+		// ORML pallets
+		Tokens: orml_tokens,
+		Currencies: orml_currencies,
+
+		// Include the custom logic from the pallet-amm-dex in the runtime.
+		AmmDex: pallet_amm_dex,
 	}
 );
 
@@ -327,7 +402,7 @@ mod benches {
 		[frame_system, SystemBench::<Runtime>]
 		[pallet_balances, Balances]
 		[pallet_timestamp, Timestamp]
-		[pallet_template, TemplateModule]
+		[pallet_amm_dex, AmmDex]
 	);
 }
 

@@ -5,6 +5,8 @@
 /// <https://docs.substrate.io/v3/runtime/frame>
 pub use pallet::*;
 
+mod traits;
+
 #[cfg(test)]
 mod mock;
 
@@ -24,6 +26,24 @@ pub mod pallet {
 	pub trait Config: frame_system::Config {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
+
+		// Type identifying a currency. Ex: u32
+		type CurrencyId: Parameter
+			+ Member
+			+ Copy
+			+ MaybeSerializeDeserialize
+			+ Ord
+			+ TypeInfo
+			+ MaxEncodedLen
+			+ From<u32>;
+
+		type PairId: Parameter
+			+ Member
+			+ Copy
+			+ MaybeSerializeDeserialize
+			+ Ord
+			+ TypeInfo
+			+ MaxEncodedLen;
 	}
 
 	#[pallet::pallet]
@@ -44,8 +64,8 @@ pub mod pallet {
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
 		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [something, who]
-		SomethingStored(u32, T::AccountId),
+		/// parameters. [token0, token1, who_created]
+		PairCreated(T::CurrencyId, T::CurrencyId, T::PairId, T::AccountId),
 	}
 
 	// Errors inform users that something went wrong.
@@ -75,7 +95,7 @@ pub mod pallet {
 			<Something<T>>::put(something);
 
 			// Emit an event.
-			Self::deposit_event(Event::SomethingStored(something, who));
+			// Self::deposit_event(Event::PairCreated(0u32, 1u32, 2u32, who));
 			// Return a successful DispatchResultWithPostInfo
 			Ok(())
 		}
