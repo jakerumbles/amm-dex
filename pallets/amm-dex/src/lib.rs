@@ -1,11 +1,13 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use frame_support::PalletId;
 /// Edit this file to define custom logic or remove it if it is not needed.
 /// Learn more about FRAME and the core library of Substrate FRAME pallets:
 /// <https://docs.substrate.io/v3/runtime/frame>
 pub use pallet::*;
 
 mod traits;
+pub mod types;
 
 #[cfg(test)]
 mod mock;
@@ -16,10 +18,26 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
+use codec::Codec;
+use frame_support::{dispatch::EncodeLike, pallet_prelude::*, traits::Currency, Blake2_128Concat};
+use frame_system::pallet_prelude::*;
+use orml_traits::{
+	MultiCurrency, MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
+	NamedMultiReservableCurrency,
+};
+use sp_runtime::traits::AtLeast32BitUnsigned;
+use sp_std::fmt::Debug;
+use types::*;
+
+// VAULT ADDRESS (random hopefully it works)
+const VAULT_ADDRESS: PalletId = PalletId(*b"5CiPPseX");
+
 #[frame_support::pallet]
 pub mod pallet {
-	use frame_support::pallet_prelude::*;
-	use frame_system::pallet_prelude::*;
+	use codec::WrapperTypeEncode;
+
+	use super::*;
+	// use crate::types::Pair;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -28,22 +46,24 @@ pub mod pallet {
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 
 		// Type identifying a currency. Ex: u32
-		type CurrencyId: Parameter
-			+ Member
-			+ Copy
-			+ MaybeSerializeDeserialize
-			+ Ord
-			+ TypeInfo
-			+ MaxEncodedLen
-			+ From<u32>;
+		type CurrencyId: Encode + Decode + EncodeLike + MaxEncodedLen + TypeInfo;
 
-		type PairId: Parameter
+		type Currencies: MultiCurrency<Self::AccountId>
+			+ MultiCurrencyExtended<Self::AccountId>
+			+ MultiLockableCurrency<Self::AccountId>
+			+ MultiReservableCurrency<Self::AccountId>
+			+ NamedMultiReservableCurrency<Self::AccountId>;
+
+		type Balance: Parameter
 			+ Member
+			+ AtLeast32BitUnsigned
+			+ Codec
+			+ Default
 			+ Copy
 			+ MaybeSerializeDeserialize
-			+ Ord
-			+ TypeInfo
-			+ MaxEncodedLen;
+			+ Debug
+			+ MaxEncodedLen
+			+ TypeInfo;
 	}
 
 	#[pallet::pallet]
@@ -58,6 +78,11 @@ pub mod pallet {
 	// https://docs.substrate.io/v3/runtime/storage#declaring-storage-items
 	pub type Something<T> = StorageValue<_, u32>;
 
+	#[pallet::storage]
+	#[pallet::getter(fn pairs)]
+	pub type Pairs<T: Config> =
+		StorageMap<_, Blake2_128Concat, (T::CurrencyId, T::CurrencyId), Pair<T>>;
+
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
 	#[pallet::event]
@@ -65,7 +90,7 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// Event documentation should end with an array that provides descriptive names for event
 		/// parameters. [token0, token1, who_created]
-		PairCreated(T::CurrencyId, T::CurrencyId, T::PairId, T::AccountId),
+		PairCreated(u128),
 	}
 
 	// Errors inform users that something went wrong.
@@ -117,6 +142,11 @@ pub mod pallet {
 					Ok(())
 				},
 			}
+		}
+
+		#[pallet::weight(1)]
+		pub fn test_balance(origin: OriginFor<T>, amount: u128) -> DispatchResult {
+			Ok(())
 		}
 	}
 }

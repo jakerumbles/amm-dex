@@ -162,9 +162,9 @@ parameter_types! {
 pub const NATIVE_TOKEN: CurrencyId = 1;
 // Other non-native tokens
 pub const PEPE: CurrencyId = 2;
-pub const CHAD: CurrencyId = 3;
-pub const TRAD: CurrencyId = 4;
-pub const JAKE: CurrencyId = 5;
+// pub const CHAD: CurrencyId = 3;
+// pub const TRAD: CurrencyId = 4;
+// pub const JAKE: CurrencyId = 5;
 
 // Configure FRAME pallets to include in runtime.
 
@@ -332,8 +332,9 @@ impl orml_currencies::Config for Runtime {
 /// Configure the pallet-amm-dex in pallets/template.
 impl pallet_amm_dex::Config for Runtime {
 	type Event = Event;
+	type Balance = Balance;
 	type CurrencyId = CurrencyId;
-	type PairId = CurrencyId;
+	type Currencies = Currencies;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
