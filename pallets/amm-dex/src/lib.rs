@@ -18,11 +18,12 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-use codec::Codec;
-use frame_support::{dispatch::EncodeLike, pallet_prelude::*, traits::Currency, Blake2_128Concat};
+use codec::{Codec, FullCodec};
+use frame_support::{dispatch::EncodeLike, pallet_prelude::*, Blake2_128Concat};
 use frame_system::pallet_prelude::*;
+use orml_traits::currency::{MultiCurrency, TransferAll};
 use orml_traits::{
-	MultiCurrency, MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
+	MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
 	NamedMultiReservableCurrency,
 };
 use sp_runtime::traits::AtLeast32BitUnsigned;
@@ -34,10 +35,16 @@ const VAULT_ADDRESS: PalletId = PalletId(*b"5CiPPseX");
 
 #[frame_support::pallet]
 pub mod pallet {
-	use codec::WrapperTypeEncode;
-
 	use super::*;
-	// use crate::types::Pair;
+
+	pub(crate) type CurrencyIdOf<T> =
+		<<T as pallet::Config>::Tokens as orml_traits::MultiCurrency<
+			<T as frame_system::Config>::AccountId,
+		>>::CurrencyId;
+
+	pub(crate) type BalanceOf<T> = <<T as pallet::Config>::Tokens as orml_traits::MultiCurrency<
+		<T as frame_system::Config>::AccountId,
+	>>::Balance;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -45,10 +52,13 @@ pub mod pallet {
 		/// Because this pallet emits events, it depends on the runtime's definition of an event.
 		type Event: From<Event<Self>> + IsType<<Self as frame_system::Config>::Event>;
 
-		// Type identifying a currency. Ex: u32
-		type CurrencyId: Encode + Decode + EncodeLike + MaxEncodedLen + TypeInfo;
-
 		type Currencies: MultiCurrency<Self::AccountId>
+			+ MultiCurrencyExtended<Self::AccountId>
+			+ MultiLockableCurrency<Self::AccountId>
+			+ MultiReservableCurrency<Self::AccountId>
+			+ NamedMultiReservableCurrency<Self::AccountId>;
+
+		type Tokens: TransferAll<Self::AccountId>
 			+ MultiCurrencyExtended<Self::AccountId>
 			+ MultiLockableCurrency<Self::AccountId>
 			+ MultiReservableCurrency<Self::AccountId>
@@ -81,7 +91,7 @@ pub mod pallet {
 	#[pallet::storage]
 	#[pallet::getter(fn pairs)]
 	pub type Pairs<T: Config> =
-		StorageMap<_, Blake2_128Concat, (T::CurrencyId, T::CurrencyId), Pair<T>>;
+		StorageMap<_, Blake2_128Concat, (CurrencyIdOf<T>, CurrencyIdOf<T>), Pair<T>>;
 
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
@@ -90,7 +100,7 @@ pub mod pallet {
 	pub enum Event<T: Config> {
 		/// Event documentation should end with an array that provides descriptive names for event
 		/// parameters. [token0, token1, who_created]
-		PairCreated(u128),
+		PairCreated(CurrencyIdOf<T>, CurrencyIdOf<T>, T::AccountId),
 	}
 
 	// Errors inform users that something went wrong.
@@ -100,52 +110,78 @@ pub mod pallet {
 		NoneValue,
 		/// Errors should have helpful documentation associated with them.
 		StorageOverflow,
+		/// Trying to create a pair with at least one non-existant token
+		InvalidToken,
+		/// Pair tokens cannot be the same
+		SameTokens,
+		/// Pair already exists
+		PairAlreadyExists,
+		/// Invalid amount, must be greater than 0
+		InvalidAmount,
 	}
 
-	// Dispatchable functions allows users to interact with the pallet and invoke state changes.
-	// These functions materialize as "extrinsics", which are often compared to transactions.
-	// Dispatchable functions must be annotated with a weight and must return a DispatchResult.
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
-		#[pallet::weight(10_000 + T::DbWeight::get().writes(1))]
-		pub fn do_something(origin: OriginFor<T>, something: u32) -> DispatchResult {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// https://docs.substrate.io/v3/runtime/origins
+		/// Create a new pool and seed with some initial liquidity
+		#[pallet::weight(1)]
+		pub fn create_pair(
+			origin: OriginFor<T>,
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult {
 			let who = ensure_signed(origin)?;
 
-			// Update storage.
-			<Something<T>>::put(something);
+			// Perform checks before calling internal `create_pair` function
+			ensure!(token_0 != token_1, Error::<T>::SameTokens);
+			ensure!(Self::pairs((token_0, token_1)) != None, Error::<T>::PairAlreadyExists);
+			ensure!(Self::pairs((token_1, token_0)) != None, Error::<T>::PairAlreadyExists);
+			ensure!(
+				token_0_amount > BalanceOf::<T>::from(0u32)
+					&& token_1_amount > BalanceOf::<T>::from(0u32),
+				Error::<T>::InvalidAmount
+			);
 
-			// Emit an event.
-			// Self::deposit_event(Event::PairCreated(0u32, 1u32, 2u32, who));
-			// Return a successful DispatchResultWithPostInfo
+			// Verify caller (`who`) has enough tokens
+			T::Tokens::ensure_can_withdraw(token_0, &who, token_0_amount)?;
+			T::Tokens::ensure_can_withdraw(token_1, &who, token_1_amount)?;
+
+			<Self as XykAmm<T>>::create_pair(
+				who,
+				token_0,
+				token_0_amount,
+				token_1,
+				token_1_amount,
+			)?;
+
 			Ok(())
 		}
+	}
 
-		/// An example dispatchable that may throw a custom error.
-		#[pallet::weight(10_000 + T::DbWeight::get().reads_writes(1,1))]
-		pub fn cause_error(origin: OriginFor<T>) -> DispatchResult {
-			let _who = ensure_signed(origin)?;
+	impl<T: Config> Pallet<T> {}
 
-			// Read a value from storage.
-			match <Something<T>>::get() {
-				// Return an error if the value has not been set.
-				None => return Err(Error::<T>::NoneValue.into()),
-				Some(old) => {
-					// Increment the value read from storage; will error in the event of overflow.
-					let new = old.checked_add(1).ok_or(Error::<T>::StorageOverflow)?;
-					// Update the value in storage with the incremented result.
-					<Something<T>>::put(new);
-					Ok(())
-				},
-			}
-		}
+	pub trait XykAmm<T: Config> {
+		fn create_pair(
+			who: T::AccountId,
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult;
+	}
 
-		#[pallet::weight(1)]
-		pub fn test_balance(origin: OriginFor<T>, amount: u128) -> DispatchResult {
+	impl<T: Config> XykAmm<T> for Pallet<T> {
+		fn create_pair(
+			who: T::AccountId,
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult {
+			// Create `Pair`
+			let pair = Pair::<T>::new(token_0, token_0_amount, token_1, token_1_amount);
+
 			Ok(())
 		}
 	}

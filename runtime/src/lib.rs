@@ -333,8 +333,8 @@ impl orml_currencies::Config for Runtime {
 impl pallet_amm_dex::Config for Runtime {
 	type Event = Event;
 	type Balance = Balance;
-	type CurrencyId = CurrencyId;
 	type Currencies = Currencies;
+	type Tokens = Tokens;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
