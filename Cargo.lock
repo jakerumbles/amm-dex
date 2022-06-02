@@ -3962,7 +3962,7 @@ checksum = "ff011a302c396a5197692431fc1948019154afc178baf7d8e37367442a4601cf"
 [[package]]
 name = "orml-currencies"
 version = "0.4.1-dev"
-source = "git+https://github.com/open-web3-stack/open-runtime-module-library?branch=master#e65be8747f4c5245721d281c93746fa17a06f924"
+source = "git+https://github.com/open-web3-stack/open-runtime-module-library?branch=master#cc26ffa9e110e2cd88276cd05c3fd1c8a8a56af6"
 dependencies = [
  "frame-support",
  "frame-system",
@@ -3979,7 +3979,7 @@ dependencies = [
 [[package]]
 name = "orml-tokens"
 version = "0.4.1-dev"
-source = "git+https://github.com/open-web3-stack/open-runtime-module-library?branch=master#e65be8747f4c5245721d281c93746fa17a06f924"
+source = "git+https://github.com/open-web3-stack/open-runtime-module-library?branch=master#3576772a896e039abf07c57e1efa305e6c0cddb0"
 dependencies = [
  "frame-support",
  "frame-system",

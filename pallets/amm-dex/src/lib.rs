@@ -26,7 +26,7 @@ use orml_traits::{
 	MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
 	NamedMultiReservableCurrency,
 };
-use sp_runtime::traits::AtLeast32BitUnsigned;
+use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
 use sp_std::fmt::Debug;
 use types::*;
 
@@ -80,18 +80,30 @@ pub mod pallet {
 	#[pallet::generate_store(pub(super) trait Store)]
 	pub struct Pallet<T>(_);
 
-	// The pallet's runtime storage items.
-	// https://docs.substrate.io/v3/runtime/storage
-	#[pallet::storage]
-	#[pallet::getter(fn something)]
-	// Learn more about declaring storage items:
-	// https://docs.substrate.io/v3/runtime/storage#declaring-storage-items
-	pub type Something<T> = StorageValue<_, u32>;
-
 	#[pallet::storage]
 	#[pallet::getter(fn pairs)]
 	pub type Pairs<T: Config> =
 		StorageMap<_, Blake2_128Concat, (CurrencyIdOf<T>, CurrencyIdOf<T>), Pair<T>>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn liquidity_mapping_a)]
+	pub type LiquidityMappingA<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		(CurrencyIdOf<T>, CurrencyIdOf<T>),
+		CurrencyIdOf<T>,
+		OptionQuery,
+	>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn liquidity_mapping_b)]
+	pub type LiquidityMappingB<T: Config> = StorageMap<
+		_,
+		Blake2_128Concat,
+		CurrencyIdOf<T>,
+		(CurrencyIdOf<T>, CurrencyIdOf<T>),
+		OptionQuery,
+	>;
 
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
@@ -135,11 +147,10 @@ pub mod pallet {
 
 			// Perform checks before calling internal `create_pair` function
 			ensure!(token_0 != token_1, Error::<T>::SameTokens);
-			ensure!(Self::pairs((token_0, token_1)) != None, Error::<T>::PairAlreadyExists);
-			ensure!(Self::pairs((token_1, token_0)) != None, Error::<T>::PairAlreadyExists);
+			ensure!(Pairs::<T>::contains_key((token_0, token_1)), Error::<T>::PairAlreadyExists);
+			ensure!(Pairs::<T>::contains_key((token_1, token_0)), Error::<T>::PairAlreadyExists);
 			ensure!(
-				token_0_amount > BalanceOf::<T>::from(0u32)
-					&& token_1_amount > BalanceOf::<T>::from(0u32),
+				!token_0_amount.is_zero() && !token_1_amount.is_zero(),
 				Error::<T>::InvalidAmount
 			);
 
@@ -181,6 +192,18 @@ pub mod pallet {
 		) -> DispatchResult {
 			// Create `Pair`
 			let pair = Pair::<T>::new(token_0, token_0_amount, token_1, token_1_amount);
+
+			// Insert `pair` to storage
+			Pairs::<T>::insert((token_0, token_1), pair);
+
+			// Calculate LP tokens to create
+			let liquidity = token_0_amount + token_1_amount;
+
+			// Mint LP tokens `mint_into` line 1687
+
+			// Send LP tokens to `who`
+
+			// Update storage mapping (AccountId, CurrencyIdOf) => BalanceOf
 
 			Ok(())
 		}
