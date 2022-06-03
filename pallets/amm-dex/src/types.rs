@@ -8,18 +8,18 @@ use scale_info::TypeInfo;
 #[codec(mel_bound())]
 pub struct Pair<T: Config> {
 	pub token_0: CurrencyIdOf<T>,
-	pub token_0_amount: BalanceOf<T>,
+	pub reserve_0: BalanceOf<T>,
 	pub token_1: CurrencyIdOf<T>,
-	pub token_1_amount: BalanceOf<T>,
+	pub reserve_1: BalanceOf<T>,
 }
 
 impl<T: Config> Pair<T> {
 	pub fn new(
 		token_0: CurrencyIdOf<T>,
-		token_0_amount: BalanceOf<T>,
+		reserve_0: BalanceOf<T>,
 		token_1: CurrencyIdOf<T>,
-		token_1_amount: BalanceOf<T>,
+		reserve_1: BalanceOf<T>,
 	) -> Self {
-		Self { token_0, token_0_amount, token_1, token_1_amount }
+		Self { token_0, reserve_0, token_1, reserve_1 }
 	}
 }

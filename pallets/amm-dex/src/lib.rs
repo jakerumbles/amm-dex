@@ -18,15 +18,15 @@ mod tests;
 #[cfg(feature = "runtime-benchmarks")]
 mod benchmarking;
 
-use codec::{Codec, FullCodec};
-use frame_support::{dispatch::EncodeLike, pallet_prelude::*, Blake2_128Concat};
+use codec::Codec;
+use frame_support::{pallet_prelude::*, traits::Time, Blake2_128Concat};
 use frame_system::pallet_prelude::*;
 use orml_traits::currency::{MultiCurrency, TransferAll};
 use orml_traits::{
 	MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
 	NamedMultiReservableCurrency,
 };
-use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
+use sp_runtime::traits::{AtLeast32Bit, AtLeast32BitUnsigned, Scale, Zero};
 use sp_std::fmt::Debug;
 use types::*;
 
@@ -45,6 +45,8 @@ pub mod pallet {
 	pub(crate) type BalanceOf<T> = <<T as pallet::Config>::Tokens as orml_traits::MultiCurrency<
 		<T as frame_system::Config>::AccountId,
 	>>::Balance;
+
+	pub type Moment<T> = <<T as pallet::Config>::Timestamp as Time>::Moment;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -74,6 +76,9 @@ pub mod pallet {
 			+ Debug
 			+ MaxEncodedLen
 			+ TypeInfo;
+
+		// Get access to `pallet_timestamp` for `get` function to get current block timestamp
+		type Timestamp: Time;
 	}
 
 	#[pallet::pallet]
@@ -105,14 +110,32 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
+	#[pallet::storage]
+	#[pallet::getter(fn k_last)]
+	pub type KLast<T: Config> = StorageValue<_, u128, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn block_timestamp_last)]
+	pub type BlockTimestampLast<T: Config> = StorageValue<_, Moment<T>, ValueQuery>;
+
+	// Other potential storage items
+	// - price_0_cumulative_last
+	// - price_1_cumulative_last
+	// - block_timestamp_last
+
 	// Pallets use events to inform users when important changes are made.
 	// https://docs.substrate.io/v3/runtime/events-and-errors
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// Event documentation should end with an array that provides descriptive names for event
-		/// parameters. [token0, token1, who_created]
-		PairCreated(CurrencyIdOf<T>, CurrencyIdOf<T>, T::AccountId),
+		/// New LP tokens minted. [token_0, token_0_amount, token1, token_1_amount, who_minted]
+		Mint(CurrencyIdOf<T>, BalanceOf<T>, CurrencyIdOf<T>, BalanceOf<T>, T::AccountId),
+		/// LP tokens burned. [token_0, token_0_amount, token1, token_1_amount, who_burned]
+		Burn(CurrencyIdOf<T>, BalanceOf<T>, CurrencyIdOf<T>, BalanceOf<T>, T::AccountId),
+		/// Swap one token for the other.
+		Swap(),
+		/// Emitted every time tokens are added or withdrawn to provide the lastest reserve information (and therefore the exchange rate)
+		Sync(BalanceOf<T>, BalanceOf<T>),
 	}
 
 	// Errors inform users that something went wrong.
@@ -168,6 +191,14 @@ pub mod pallet {
 
 			Ok(())
 		}
+
+		#[pallet::weight(1)]
+		pub fn set_block_timestamp(origin: OriginFor<T>) -> DispatchResult {
+			let now = T::Timestamp::now();
+			BlockTimestampLast::<T>::put(now);
+
+			Ok(())
+		}
 	}
 
 	impl<T: Config> Pallet<T> {}
@@ -203,7 +234,7 @@ pub mod pallet {
 
 			// Send LP tokens to `who`
 
-			// Update storage mapping (AccountId, CurrencyIdOf) => BalanceOf
+			// Deposit `Mint` event
 
 			Ok(())
 		}
