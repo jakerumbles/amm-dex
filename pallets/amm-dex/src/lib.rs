@@ -26,7 +26,7 @@ use orml_traits::{
 	MultiCurrencyExtended, MultiLockableCurrency, MultiReservableCurrency,
 	NamedMultiReservableCurrency,
 };
-use sp_runtime::traits::{AtLeast32Bit, AtLeast32BitUnsigned, Scale, Zero};
+use sp_runtime::traits::{AtLeast32BitUnsigned, Zero};
 use sp_std::fmt::Debug;
 use types::*;
 
@@ -46,7 +46,7 @@ pub mod pallet {
 		<T as frame_system::Config>::AccountId,
 	>>::Balance;
 
-	pub type Moment<T> = <<T as pallet::Config>::Timestamp as Time>::Moment;
+	pub type Moment<T> = <<T as pallet::Config>::Time as Time>::Moment;
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -78,7 +78,7 @@ pub mod pallet {
 			+ TypeInfo;
 
 		// Get access to `pallet_timestamp` for `get` function to get current block timestamp
-		type Timestamp: Time;
+		type Time: Time;
 	}
 
 	#[pallet::pallet]
@@ -90,6 +90,7 @@ pub mod pallet {
 	pub type Pairs<T: Config> =
 		StorageMap<_, Blake2_128Concat, (CurrencyIdOf<T>, CurrencyIdOf<T>), Pair<T>>;
 
+	/// Mapping from tokens in a pair to the id of their corresponding LP token
 	#[pallet::storage]
 	#[pallet::getter(fn liquidity_mapping_a)]
 	pub type LiquidityMappingA<T: Config> = StorageMap<
@@ -100,6 +101,7 @@ pub mod pallet {
 		OptionQuery,
 	>;
 
+	/// Mapping from LP token to the id's of the 2 tokens it represents share for
 	#[pallet::storage]
 	#[pallet::getter(fn liquidity_mapping_b)]
 	pub type LiquidityMappingB<T: Config> = StorageMap<
@@ -111,10 +113,6 @@ pub mod pallet {
 	>;
 
 	#[pallet::storage]
-	#[pallet::getter(fn k_last)]
-	pub type KLast<T: Config> = StorageValue<_, u128, ValueQuery>;
-
-	#[pallet::storage]
 	#[pallet::getter(fn block_timestamp_last)]
 	pub type BlockTimestampLast<T: Config> = StorageValue<_, Moment<T>, ValueQuery>;
 
@@ -123,8 +121,6 @@ pub mod pallet {
 	// - price_1_cumulative_last
 	// - block_timestamp_last
 
-	// Pallets use events to inform users when important changes are made.
-	// https://docs.substrate.io/v3/runtime/events-and-errors
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
@@ -141,8 +137,8 @@ pub mod pallet {
 	// Errors inform users that something went wrong.
 	#[pallet::error]
 	pub enum Error<T> {
-		/// Error names should be descriptive.
-		NoneValue,
+		/// Error in LiquidityMapping Lookup
+		NoMatch,
 		/// Errors should have helpful documentation associated with them.
 		StorageOverflow,
 		/// Trying to create a pair with at least one non-existant token
@@ -194,7 +190,7 @@ pub mod pallet {
 
 		#[pallet::weight(1)]
 		pub fn set_block_timestamp(origin: OriginFor<T>) -> DispatchResult {
-			let now = T::Timestamp::now();
+			let now = T::Time::now();
 			BlockTimestampLast::<T>::put(now);
 
 			Ok(())
@@ -211,6 +207,24 @@ pub mod pallet {
 			token_1: CurrencyIdOf<T>,
 			token_1_amount: BalanceOf<T>,
 		) -> DispatchResult;
+
+		fn mint(
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult;
+
+		fn burn(lp_token: CurrencyIdOf<T>, amount: BalanceOf<T>) -> DispatchResult;
+
+		fn swap(
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult;
+
+		fn update(token_0: CurrencyIdOf<T>, token_1: CurrencyIdOf<T>) -> DispatchResult;
 	}
 
 	impl<T: Config> XykAmm<T> for Pallet<T> {
@@ -235,6 +249,44 @@ pub mod pallet {
 			// Send LP tokens to `who`
 
 			// Deposit `Mint` event
+
+			Ok(())
+		}
+
+		fn mint(
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult {
+			Self::update(token_0, token_1)?;
+			Ok(())
+		}
+
+		fn burn(lp_token: CurrencyIdOf<T>, amount: BalanceOf<T>) -> DispatchResult {
+			let (token_0, token_1) =
+				Self::liquidity_mapping_b(lp_token).ok_or(Error::<T>::NoMatch)?;
+
+			Self::update(token_0, token_1)?;
+			Ok(())
+		}
+
+		fn swap(
+			token_0: CurrencyIdOf<T>,
+			token_0_amount: BalanceOf<T>,
+			token_1: CurrencyIdOf<T>,
+			token_1_amount: BalanceOf<T>,
+		) -> DispatchResult {
+			Self::update(token_0, token_1)?;
+			Ok(())
+		}
+
+		fn update(token_0: CurrencyIdOf<T>, token_1: CurrencyIdOf<T>) -> DispatchResult {
+			// update reserves and, on the first call per block, price accumulators
+			// Need a check to prevent overflow I think
+			let pair = Self::pairs((token_0, token_1)).ok_or(Error::<T>::NoMatch)?;
+			let block_timestamp = T::Time::now();
+			let time_elapsed = block_timestamp - pair.block_timestamp_last;
 
 			Ok(())
 		}

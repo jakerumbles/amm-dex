@@ -335,7 +335,7 @@ impl pallet_amm_dex::Config for Runtime {
 	type Balance = Balance;
 	type Currencies = Currencies;
 	type Tokens = Tokens;
-	type Timestamp = Timestamp;
+	type Time = Timestamp;
 }
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
